@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaxScanner — Every receipt, ledgered the moment you send it.</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#101F1A;
+    --ink-2:#182A23;
+    --parchment:#F6F2E7;
+    --parchment-2:#EFE9D8;
+    --line:#DDD3B8;
+    --line-dark:#2A3D34;
+    --brass:#B4884A;
+    --brass-light:#D6AF74;
+    --forest:#1F4B3F;
+    --stamp:#A23E2E;
+    --charcoal:#1D1A15;
+    --slate:#6B6357;
+    --slate-light:#8C8574;
+    --white:#FFFFFF;
+    --serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(16,31,26,0.06), 0 8px 24px rgba(16,31,26,0.06);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--parchment);
+    color:var(--charcoal);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001ms !important; transition-duration:0.001ms !important;}
+  }
+  a{color:inherit;}
+  button{font-family:inherit; cursor:pointer;}
+  .hidden{display:none !important;}
+
+  /* ---------- shared bits ---------- */
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--brass);
+    font-weight:600;
+  }
+  .stamp-mark{
+    width:38px;height:38px;
+    border:1.5px solid currentColor;
+    border-radius:4px;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--serif);
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:-0.5px;
+    flex-shrink:0;
+  }
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:12px 22px;
+    border-radius:3px;
+    font-size:14px;
+    font-weight:600;
+    border:1px solid transparent;
+    letter-spacing:.01em;
+    transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+    text-decoration:none;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--forest); color:var(--parchment); border-color:var(--forest);}
+  .btn-primary:hover{background:#183a30; box-shadow:var(--shadow);}
+  .btn-brass{background:var(--brass); color:var(--ink); border-color:var(--brass);}
+  .btn-brass:hover{background:var(--brass-light); box-shadow:var(--shadow);}
+  .btn-ghost{background:transparent; color:var(--ink); border-color:var(--line);}
+  .btn-ghost:hover{border-color:var(--ink);}
+  .btn-ghost.on-dark{color:var(--parchment); border-color:rgba(246,242,231,0.35);}
+  .btn-ghost.on-dark:hover{border-color:var(--parchment);}
+  .btn-sm{padding:8px 14px; font-size:12.5px; border-radius:3px;}
+  .btn-block{width:100%; justify-content:center;}
+  .btn[disabled]{opacity:.5; cursor:not-allowed;}
+
+  .card{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:6px;
+  }
+  .badge{
+    font-family:var(--mono);
+    font-size:11px;
+    padding:3px 8px;
+    border-radius:20px;
+    letter-spacing:.03em;
+    font-weight:600;
+    display:inline-block;
+  }
+  .badge-owner{background:rgba(31,75,63,0.1); color:var(--forest);}
+  .badge-manager{background:rgba(180,136,74,0.16); color:#8a6428;}
+  .badge-admin{background:rgba(162,62,46,0.1); color:var(--stamp);}
+  .badge-pending{background:rgba(107,99,87,0.12); color:var(--slate);}
+  .badge-ai{background:rgba(31,75,63,0.08); color:var(--forest); font-family:var(--mono);}
+  .badge-manual{background:rgba(107,99,87,0.1); color:var(--slate); font-family:var(--mono);}
+
+  .toast-wrap{position:fixed; bottom:22px; right:22px; z-index:999; display:flex; flex-direction:column; gap:10px;}
+  .toast{
+    background:var(--ink); color:var(--parchment);
+    padding:13px 18px; border-radius:5px; font-size:13.5px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.25);
+    display:flex; align-items:center; gap:10px;
+    animation:toastIn .25s ease;
+    max-width:320px;
+  }
+  @keyframes toastIn{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
+  .toast .dot{width:7px;height:7px;border-radius:50%;background:var(--brass); flex-shrink:0;}
+
+  /* ================= LANDING ================= */
+  #view-landing header.nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(246,242,231,0.92);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .nav-inner{
+    max-width:1180px; margin:0 auto; padding:16px 28px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .logo-lockup{display:flex; align-items:center; gap:10px;}
+  .logo-word{font-family:var(--serif); font-weight:700; font-size:19px; letter-spacing:-0.2px;}
+  .logo-sub{font-family:var(--mono); font-size:9.5px; letter-spacing:.12em; color:var(--slate); text-transform:uppercase; margin-top:-2px;}
+  .nav-links{display:flex; align-items:center; gap:32px;}
+  .nav-links a{font-size:13.5px; font-weight:500; text-decoration:none; color:var(--charcoal); opacity:.8;}
+  .nav-links a:hover{opacity:1;}
+
+  .hero{max-width:1180px; margin:0 auto; padding:76px 28px 40px; display:grid; grid-template-columns:1.05fr .95fr; gap:56px; align-items:center;}
+  .hero h1{
+    font-family:var(--serif); font-weight:700;
+    font-size:clamp(34px, 4.6vw, 54px);
+    line-height:1.06; letter-spacing:-0.5px;
+    margin:16px 0 20px;
+  }
+  .hero h1 em{font-style:italic; color:var(--forest);}
+  .hero p.lead{font-size:16.5px; line-height:1.65; color:var(--slate); max-width:480px; margin:0 0 30px;}
+  .hero-actions{display:flex; gap:14px; align-items:center; flex-wrap:wrap;}
+  .hero-note{margin-top:22px; font-size:12.5px; color:var(--slate-light); font-family:var(--mono);}
+
+  /* signature receipt-scan visual */
+  .scan-stage{position:relative;}
+  .receipt-card{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:2px;
+    box-shadow:0 24px 60px rgba(16,31,26,0.14), 0 4px 14px rgba(16,31,26,0.08);
+    padding:26px 26px 22px;
+    position:relative;
+    overflow:hidden;
+    max-width:380px;
+    margin-left:auto;
+  }
+  .receipt-card::before, .receipt-card::after{
+    content:""; position:absolute; left:0; right:0; height:10px; background:var(--parchment);
+  }
+  .receipt-top-row{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;}
+  .receipt-badge{font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--forest); background:rgba(31,75,63,0.08); padding:4px 8px; border-radius:3px;}
+  .receipt-field{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:9px 0; border-bottom:1px dashed var(--line);
+    opacity:0; transform:translateY(4px);
+    animation:fieldIn .5s ease forwards;
+  }
+  .receipt-field:last-of-type{border-bottom:none;}
+  .receipt-field .k{font-size:11.5px; color:var(--slate); text-transform:uppercase; letter-spacing:.05em; font-family:var(--mono);}
+  .receipt-field .v{font-family:var(--mono); font-size:13.5px; font-weight:600; color:var(--charcoal);}
+  .receipt-field .v.blank{color:var(--line); position:relative;}
+  @keyframes fieldIn{to{opacity:1; transform:translateY(0);}}
+  .scan-line{
+    position:absolute; left:0; right:0; height:64px;
+    background:linear-gradient(180deg, rgba(180,136,74,0) 0%, rgba(180,136,74,0.14) 45%, rgba(180,136,74,0.28) 50%, rgba(180,136,74,0.14) 55%, rgba(180,136,74,0) 100%);
+    animation:scanMove 3.2s ease-in-out infinite;
+    pointer-events:none;
+  }
+  @keyframes scanMove{0%{top:-70px;} 55%{top:100%;} 100%{top:100%;}}
+  .receipt-total{
+    margin-top:14px; padding-top:14px; border-top:2px solid var(--charcoal);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .receipt-total .amt{font-family:var(--serif); font-size:24px; font-weight:700;}
+  .stage-caption{
+    position:absolute; bottom:-38px; left:0; right:0; text-align:center;
+    font-family:var(--mono); font-size:11px; color:var(--slate); letter-spacing:.04em;
+  }
+
+  .section{max-width:1180px; margin:0 auto; padding:88px 28px;}
+  .section-head{max-width:620px; margin-bottom:44px;}
+  .section-head h2{font-family:var(--serif); font-size:clamp(26px,3vw,36px); margin:12px 0 12px; letter-spacing:-0.3px;}
+  .section-head p{color:var(--slate); font-size:15px; line-height:1.6; margin:0;}
+
+  .audience-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:8px; overflow:hidden;}
+  .audience-card{background:var(--white); padding:34px 30px;}
+  .audience-card .num{font-family:var(--mono); font-size:11px; color:var(--brass); letter-spacing:.1em; margin-bottom:16px; display:block;}
+  .audience-card h3{font-family:var(--serif); font-size:20px; margin:0 0 12px;}
+  .audience-card p{color:var(--slate); font-size:14px; line-height:1.6; margin:0 0 16px;}
+  .audience-card ul{margin:0; padding:0; list-style:none;}
+  .audience-card li{font-size:13px; color:var(--charcoal); padding:6px 0; border-top:1px solid var(--parchment-2); display:flex; gap:8px;}
+  .audience-card li:first-child{border-top:none;}
+  .audience-card li::before{content:"—"; color:var(--brass); flex-shrink:0;}
+
+  .section-dark{background:var(--ink); color:var(--parchment);}
+  .section-dark .section-head p{color:rgba(246,242,231,0.65);}
+  .section-dark .eyebrow{color:var(--brass-light);}
+
+  .feature-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:36px 40px;}
+  .feature-item{border-top:1px solid var(--line-dark); padding-top:20px;}
+  .feature-icon{width:34px; height:34px; margin-bottom:16px; color:var(--brass-light);}
+  .feature-item h4{font-family:var(--serif); font-size:17px; margin:0 0 8px; font-weight:600;}
+  .feature-item p{font-size:13.5px; line-height:1.6; color:rgba(246,242,231,0.6); margin:0;}
+
+  .how-list{counter-reset:step;}
+  .how-row{
+    display:grid; grid-template-columns:70px 1fr; gap:26px;
+    padding:26px 0; border-top:1px solid var(--line);
+    align-items:baseline;
+  }
+  .how-row:last-child{border-bottom:1px solid var(--line);}
+  .how-index{font-family:var(--mono); font-size:13px; color:var(--brass); font-weight:700;}
+  .how-row h4{font-family:var(--serif); font-size:18px; margin:0 0 6px;}
+  .how-row p{margin:0; color:var(--slate); font-size:14px; line-height:1.6; max-width:560px;}
+
+  .cta-band{
+    background:var(--forest); color:var(--parchment);
+    border-radius:10px; padding:56px 50px;
+    display:flex; align-items:center; justify-content:space-between; gap:30px; flex-wrap:wrap;
+  }
+  .cta-band h3{font-family:var(--serif); font-size:28px; margin:0 0 6px; max-width:420px;}
+  .cta-band p{margin:0; color:rgba(246,242,231,0.7); font-size:14px;}
+
+  footer.site-footer{border-top:1px solid var(--line); padding:40px 28px 32px;}
+  .footer-inner{max-width:1180px; margin:0 auto; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:20px;}
+  .footer-note{font-size:12px; color:var(--slate-light); max-width:520px; line-height:1.6;}
+  .footer-links{display:flex; gap:20px; font-size:13px;}
+  .footer-links a{text-decoration:none; color:var(--slate);}
+
+  /* ================= LOGIN ================= */
+  #view-login{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(ellipse at 20% -10%, rgba(180,136,74,0.10), transparent 55%),
+      var(--ink);
+    padding:24px;
+  }
+  .login-card{
+    width:100%; max-width:400px; background:var(--parchment);
+    border-radius:8px; padding:38px 34px; box-shadow:0 30px 80px rgba(0,0,0,0.4);
+  }
+  .login-card .stamp-mark{color:var(--forest); margin:0 auto 18px;}
+  .login-card h2{font-family:var(--serif); text-align:center; font-size:22px; margin:0 0 6px;}
+  .login-card > p.sub{text-align:center; color:var(--slate); font-size:13px; margin:0 0 28px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:12px; font-weight:600; color:var(--slate); margin-bottom:6px; letter-spacing:.02em;}
+  .field input, .field select{
+    width:100%; padding:11px 13px; border:1px solid var(--line); border-radius:4px;
+    font-size:14.5px; background:var(--white); color:var(--charcoal); font-family:var(--sans);
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{outline:2px solid var(--brass); outline-offset:1px; border-color:var(--brass);}
+  .field textarea{width:100%; padding:11px 13px; border:1px solid var(--line); border-radius:4px; font-family:var(--sans); font-size:14.5px; resize:vertical;}
+  .phone-input{display:flex; gap:8px;}
+  .phone-prefix{
+    font-family:var(--mono); font-size:14px; color:var(--slate);
+    background:var(--parchment-2); border:1px solid var(--line); border-radius:4px;
+    padding:0 12px; display:flex; align-items:center;
+  }
+  .otp-row{display:flex; gap:8px; justify-content:space-between;}
+  .otp-row input{width:100%; text-align:center; font-family:var(--mono); font-size:18px; padding:10px 0;}
+
+  .demo-box{
+    margin-top:24px; padding:16px; border:1px dashed var(--line); border-radius:6px; background:rgba(180,136,74,0.05);
+  }
+  .demo-box p{margin:0 0 10px; font-size:11.5px; color:var(--slate); text-transform:uppercase; letter-spacing:.06em; font-family:var(--mono);}
+  .demo-btns{display:flex; flex-direction:column; gap:8px;}
+  .demo-btn{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 12px; background:var(--white); border:1px solid var(--line); border-radius:4px;
+    font-size:12.5px; text-align:left; width:100%;
+  }
+  .demo-btn:hover{border-color:var(--brass);}
+  .demo-btn .role{font-weight:700; color:var(--forest);}
+  .demo-btn .num{font-family:var(--mono); color:var(--slate-light);}
+  .back-to-site{display:block; text-align:center; margin-top:20px; font-size:12.5px; color:var(--slate); text-decoration:none;}
+
+  /* ================= APP SHELL ================= */
+  #view-app{min-height:100vh; display:flex;}
+  .sidebar{
+    width:236px; flex-shrink:0; background:var(--ink); color:var(--parchment);
+    display:flex; flex-direction:column; padding:22px 16px;
+    position:sticky; top:0; height:100vh;
+  }
+  .sidebar .logo-lockup{padding:6px 10px 22px; border-bottom:1px solid var(--line-dark); margin-bottom:16px;}
+  .sidebar .logo-word{color:var(--parchment);}
+  .sidebar .logo-sub{color:var(--slate-light);}
+  .side-link{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 12px; border-radius:5px; font-size:13.5px; font-weight:500;
+    color:rgba(246,242,231,0.72); text-decoration:none; margin-bottom:2px;
+  }
+  .side-link .l{display:flex; align-items:center; gap:10px;}
+  .side-link svg{width:16px; height:16px; opacity:.85;}
+  .side-link:hover{background:rgba(246,242,231,0.06); color:var(--parchment);}
+  .side-link.active{background:rgba(180,136,74,0.16); color:var(--brass-light);}
+  .side-count{
+    font-family:var(--mono); font-size:10.5px; background:rgba(246,242,231,0.1);
+    padding:1px 7px; border-radius:20px; color:rgba(246,242,231,0.75);
+  }
+  .side-link.active .side-count{background:rgba(180,136,74,0.28); color:var(--brass-light);}
+  .sidebar-footer{margin-top:auto; padding-top:16px; border-top:1px solid var(--line-dark);}
+  .user-chip{display:flex; align-items:center; gap:10px; padding:8px 10px;}
+  .user-chip .av{width:30px; height:30px; border-radius:50%; background:var(--brass); color:var(--ink); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; font-family:var(--mono); flex-shrink:0;}
+  .user-chip .name{font-size:12.5px; font-weight:600; color:var(--parchment);}
+  .user-chip .role{font-size:10.5px; color:var(--slate-light); text-transform:uppercase; letter-spacing:.04em;}
+  .logout-link{display:block; margin-top:8px; padding:8px 10px; font-size:12px; color:rgba(246,242,231,0.5); text-decoration:none;}
+  .logout-link:hover{color:var(--stamp);}
+
+  .main{flex:1; min-width:0;}
+  .topbar{
+    background:var(--white); border-bottom:1px solid var(--line);
+    padding:18px 32px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:10;
+  }
+  .topbar h1{font-family:var(--serif); font-size:21px; margin:0;}
+  .topbar .crumb{font-family:var(--mono); font-size:11px; color:var(--slate-light); text-transform:uppercase; letter-spacing:.08em;}
+  .content{padding:30px 32px 60px;}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:26px;}
+  .stat-card{padding:20px 20px 18px; border-top:3px solid var(--brass);}
+  .stat-card .label{font-size:11.5px; color:var(--slate); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; font-family:var(--mono);}
+  .stat-card .value{font-family:var(--serif); font-size:28px; font-weight:700; color:var(--charcoal);}
+  .stat-card .sub{font-size:12px; color:var(--slate-light); margin-top:6px;}
+  .stat-card.forest{border-top-color:var(--forest);}
+  .stat-card.stamp{border-top-color:var(--stamp);}
+
+  .panel{padding:24px 26px; margin-bottom:22px;}
+  .panel-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;}
+  .panel-head h3{font-family:var(--serif); font-size:17px; margin:0;}
+  .panel-head .hint{font-size:12px; color:var(--slate-light);}
+
+  .two-col{display:grid; grid-template-columns:1.5fr 1fr; gap:20px;}
+
+  table.ledger{width:100%; border-collapse:collapse; font-size:13px;}
+  table.ledger thead th{
+    text-align:left; font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--slate); padding:0 10px 10px; border-bottom:1px solid var(--charcoal); font-weight:600;
+  }
+  table.ledger td{padding:12px 10px; border-bottom:1px solid var(--parchment-2); vertical-align:middle;}
+  table.ledger tbody tr:hover{background:var(--parchment);}
+  table.ledger .num-cell{font-family:var(--mono); text-align:right;}
+  table.ledger .actions-cell{text-align:right; white-space:nowrap;}
+
+  .chart-wrap{padding:10px 4px 0;}
+  .bar-col{display:flex; align-items:flex-end; gap:16px; height:150px; padding:0 6px;}
+  .bar{flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; height:100%; justify-content:flex-end;}
+  .bar .stick{width:100%; max-width:34px; background:linear-gradient(180deg,var(--brass-light),var(--brass)); border-radius:3px 3px 0 0; transition:height .6s cubic-bezier(.2,.8,.2,1);}
+  .bar .m{font-family:var(--mono); font-size:10.5px; color:var(--slate);}
+
+  .search-row{display:flex; gap:10px; margin-bottom:4px;}
+  .search-row input{flex:1;}
+
+  .account-card{padding:18px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:10px;}
+  .account-card .left{display:flex; align-items:center; gap:14px;}
+  .account-card .pin-mono{font-family:var(--mono); font-weight:700; font-size:14px;}
+  .account-card .aname{font-size:13px; color:var(--slate); margin-top:2px;}
+  .account-card .right{display:flex; align-items:center; gap:12px;}
+  .manager-row{display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--parchment-2); font-size:13px;}
+  .manager-row:last-child{border-bottom:none;}
+
+  .empty-state{padding:44px 20px; text-align:center; color:var(--slate);}
+  .empty-state .stamp-mark{margin:0 auto 14px; color:var(--line);}
+  .empty-state p{font-size:13.5px; margin:4px 0 0;}
+
+  .checkbox-list{display:flex; flex-direction:column; gap:8px; margin:6px 0 4px;}
+  .checkbox-item{display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:4px; font-size:13px;}
+  .checkbox-item input{width:16px; height:16px; accent-color:var(--forest);}
+
+  .filter-pills{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;}
+  .pill{padding:7px 14px; border-radius:20px; border:1px solid var(--line); font-size:12.5px; background:var(--white); color:var(--charcoal);}
+  .pill.active{background:var(--forest); border-color:var(--forest); color:var(--parchment); font-weight:600;}
+
+  .admin-grid{display:grid; grid-template-columns:1.3fr 1fr; gap:20px;}
+
+  @media (max-width: 980px){
+    .hero{grid-template-columns:1fr;}
+    .audience-grid, .feature-grid{grid-template-columns:1fr;}
+    .stat-grid{grid-template-columns:repeat(2,1fr);}
+    .two-col, .admin-grid{grid-template-columns:1fr;}
+    .sidebar{display:none;}
+    .content{padding:22px 16px 50px;}
+    .topbar{padding:14px 16px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- ============================================================ -->
+<!-- LANDING PAGE -->
+<!-- ============================================================ -->
+<div id="view-landing">
+  <header class="nav">
+    <div class="nav-inner">
+      <div class="logo-lockup">
+        <div class="stamp-mark" style="color:var(--forest);">TS</div>
+        <div>
+          <div class="logo-word">TaxScanner</div>
+          <div class="logo-sub">KRA-ready records</div>
+        </div>
+      </div>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#audience">Who it's for</a>
+        <a href="#how">How it works</a>
+      </nav>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="goTo('login')">Log in</button>
+        <button class="btn btn-brass btn-sm" onclick="goTo('login')">Get started</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <span class="eyebrow">WhatsApp receipt capture for Kenyan taxpayers</span>
+      <h1>Every receipt, <em>ledgered</em> the moment you send it.</h1>
+      <p class="lead">Photograph a receipt on WhatsApp and TaxScanner reads the supplier, PIN, amount and tax in seconds — you confirm it, and it's filed against the right account. No app to install. No spreadsheet to remember to update.</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" onclick="goTo('login')">Log in to your account</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('how').scrollIntoView()">See how scanning works</button>
+      </div>
+      <div class="hero-note">NO CARD REQUIRED · MULTI-PIN SUPPORT · CSV &amp; PDF EXPORTS</div>
+    </div>
+
+    <div class="scan-stage">
+      <div class="receipt-card">
+        <div class="scan-line"></div>
+        <div class="receipt-top-row">
+          <div>
+            <div style="font-family:var(--mono); font-size:11px; color:var(--slate-light);">REF #R48213</div>
+            <div style="font-family:var(--serif); font-weight:700; font-size:15px; margin-top:2px;">Naivas Supermarket Ltd</div>
+          </div>
+          <span class="receipt-badge">AI VISION</span>
+        </div>
+        <div class="receipt-field" style="animation-delay:.1s"><span class="k">Supplier PIN</span><span class="v">P051876234K</span></div>
+        <div class="receipt-field" style="animation-delay:.35s"><span class="k">Invoice #</span><span class="v">INV-88213</span></div>
+        <div class="receipt-field" style="animation-delay:.6s"><span class="k">Amount excl. tax</span><span class="v">KES 4,310.00</span></div>
+        <div class="receipt-field" style="animation-delay:.85s"><span class="k">Tax (16%)</span><span class="v">KES 689.60</span></div>
+        <div class="receipt-field" style="animation-delay:1.1s"><span class="k">Date</span><span class="v">24 Jul 2026</span></div>
+        <div class="receipt-total">
+          <span style="font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--slate); font-family:var(--mono);">Total</span>
+          <span class="amt">KES 4,999.60</span>
+        </div>
+      </div>
+      <div class="stage-caption">read, confirmed, and saved — no typing required</div>
+    </div>
+  </section>
+
+  <section class="section" id="audience">
+    <div class="section-head">
+      <span class="eyebrow">Who it's for</span>
+      <h2>Built for how Kenyan accounts actually get managed.</h2>
+      <p>A KRA PIN is rarely handled by one person alone. TaxScanner mirrors that — an owner holds the PIN, and whoever actually does the filing gets exactly the access they need to do it.</p>
+    </div>
+    <div class="audience-grid">
+      <div class="audience-card">
+        <span class="num">Owner</span>
+        <h3>Business &amp; individual taxpayers</h3>
+        <p>Hold every KRA PIN you run — company or personal — in one place, and see your position at a glance instead of digging through a folder of photos.</p>
+        <ul>
+          <li>Register a PIN straight from WhatsApp, no paperwork</li>
+          <li>Hold multiple PINs under one login</li>
+          <li>Delegate filing without handing over the PIN itself</li>
+        </ul>
+      </div>
+      <div class="audience-card">
+        <span class="num">Account Manager</span>
+        <h3>Accountants &amp; bookkeepers</h3>
+        <p>Get delegated access to exactly the PINs you manage, capture receipts on the client's behalf, and export a clean ledger in the format your workpapers already use.</p>
+        <ul>
+          <li>Work across every client PIN you're delegated to</li>
+          <li>No registration step — start the moment you're invited</li>
+          <li>Export to CSV or PDF, per account or filtered by date</li>
+        </ul>
+      </div>
+      <div class="audience-card">
+        <span class="num">Finance Team</span>
+        <h3>Companies with more than one PIN</h3>
+        <p>Split the work properly: owners hold the PIN, managers do the filing, and every record shows exactly who captured it and how.</p>
+        <ul>
+          <li>Invite colleagues onto specific accounts only</li>
+          <li>Full audit trail — AI-scanned vs. manually entered</li>
+          <li>One dashboard across every PIN the business runs</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark" id="features">
+    <div class="section-head">
+      <span class="eyebrow">Features</span>
+      <h2>Everything a receipt needs on its way into your records.</h2>
+      <p>Nothing here requires an app install, a training session, or a new habit — it runs on the WhatsApp thread your team already has open.</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-item">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12a8 8 0 1 1 3.1 6.3L4 19l1-3.4A7.96 7.96 0 0 1 4 12Z"/><path d="M9 10.5c.4 2 2 3.6 4 4"/></svg>
+        <h4>WhatsApp capture</h4>
+        <p>Send a photo of any receipt to the number you already message. It's logged the instant it arrives — before extraction even runs.</p>
+      </div>
+      <div class="feature-item">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 7h18M3 12h18M3 17h10"/><circle cx="19" cy="17" r="2.6"/></svg>
+        <h4>AI vision extraction</h4>
+        <p>Supplier, PIN, amount, tax and date are read from the photo automatically — you always confirm before anything is saved.</p>
+      </div>
+      <div class="feature-item">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="5" width="7" height="7" rx="1"/><rect x="14" y="5" width="7" height="7" rx="1"/><rect x="3" y="16" width="7" height="7" rx="1"/><rect x="14" y="16" width="7" height="7" rx="1"/></svg>
+        <h4>Multi-PIN accounts</h4>
+        <p>Hold a company PIN and a personal PIN side by side, and switch between them without switching logins.</p>
+      </div>
+      <div class="feature-item">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="16" r="3"/><path d="M10.5 9.5 14.5 14"/></svg>
+        <h4>Delegated access</h4>
+        <p>Invite a colleague as an Account Manager on exactly the PINs you own — never automatically on all of them.</p>
+      </div>
+      <div class="feature-item">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 3v13m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <h4>CSV &amp; PDF exports</h4>
+        <p>Download a single receipt, or every receipt in a date range, as a ledger-formatted CSV or paginated PDF report.</p>
+      </div>
+      <div class="feature-item">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 3 4 6v6c0 4.4 3.4 8.2 8 9 4.6-.8 8-4.6 8-9V6l-8-3Z"/><path d="M9 12.5l2 2 4-4.5"/></svg>
+        <h4>eTIMS-ready</h4>
+        <p>Every record is structured to slot straight into KRA's eTIMS the moment that integration goes live — nothing to re-enter later.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <div class="section-head">
+      <span class="eyebrow">How it works</span>
+      <h2>Four steps, entirely inside your WhatsApp thread.</h2>
+    </div>
+    <div class="how-list">
+      <div class="how-row">
+        <div class="how-index">01</div>
+        <div><h4>Say "Hi" to register</h4><p>Enter your KRA PIN, or your National ID if you're registering as an individual — your details are verified automatically, in under a minute.</p></div>
+      </div>
+      <div class="how-row">
+        <div class="how-index">02</div>
+        <div><h4>Send a photo of the receipt</h4><p>Choose which account it belongs to (if you manage more than one), then attach the photo like you would to any other chat.</p></div>
+      </div>
+      <div class="how-row">
+        <div class="how-index">03</div>
+        <div><h4>Confirm what was read</h4><p>Supplier, PIN, amount, tax and date come back for your review. Edit anything that's off, then confirm — nothing saves without your say-so.</p></div>
+      </div>
+      <div class="how-row">
+        <div class="how-index">04</div>
+        <div><h4>Find it later on the web</h4><p>Log in here to search by PIN, filter by date, and export the whole ledger — or hand a clean export straight to your accountant.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0;">
+    <div class="cta-band">
+      <div>
+        <h3>Your receipts are already piling up.</h3>
+        <p>Start ledgering them properly — registration takes under a minute, on WhatsApp.</p>
+      </div>
+      <button class="btn btn-brass" onclick="goTo('login')">Log in to your account</button>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <div class="logo-lockup" style="margin-bottom:10px;">
+          <div class="stamp-mark" style="color:var(--forest); width:28px; height:28px; font-size:12px;">TS</div>
+          <div class="logo-word" style="font-size:15px;">TaxScanner</div>
+        </div>
+        <p class="footer-note">TaxScanner is an independent record-keeping tool. It is not yet integrated with KRA's eTIMS system — every receipt is marked "Pending Verification" until that integration goes live. Always confirm figures against your official KRA filings.</p>
+      </div>
+      <div class="footer-links">
+        <a href="#features">Features</a>
+        <a href="#audience">Who it's for</a>
+        <a href="#how">How it works</a>
+        <a onclick="goTo('login')" style="cursor:pointer;">Log in</a>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<!-- ============================================================ -->
+<!-- LOGIN -->
+<!-- ============================================================ -->
+<div id="view-login" class="hidden">
+  <div class="login-card">
+    <div class="stamp-mark">TS</div>
+    <h2>Log in to TaxScanner</h2>
+    <p class="sub">Use the WhatsApp number your account is registered with.</p>
+
+    <div id="loginStepPhone">
+      <div class="field">
+        <label>WhatsApp number</label>
+        <div class="phone-input">
+          <span class="phone-prefix">+254</span>
+          <input type="tel" id="loginPhone" placeholder="7XX XXX XXX" maxlength="9">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="sendOtp()">Send code</button>
+    </div>
+
+    <div id="loginStepOtp" class="hidden">
+      <p class="sub" style="margin-top:-16px;">Enter the 6-digit code sent to <span id="otpPhoneEcho" style="font-family:var(--mono); color:var(--charcoal); font-weight:600;"></span></p>
+      <div class="field">
+        <label>Verification code</label>
+        <input type="text" id="otpCode" placeholder="••••••" maxlength="6" style="letter-spacing:4px; text-align:center; font-family:var(--mono); font-size:18px;">
+      </div>
+      <button class="btn btn-primary btn-block" onclick="confirmOtp()">Continue</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:8px;" onclick="backToPhone()">Use a different number</button>
+    </div>
+
+    <div class="demo-box">
+      <p>Try the demo</p>
+      <div class="demo-btns">
+        <button class="demo-btn" onclick="demoLogin('owner')"><span><span class="role">Owner</span> · Alena Kimutai</span><span class="num">254712●●●341</span></button>
+        <button class="demo-btn" onclick="demoLogin('manager')"><span><span class="role">Account Manager</span> · Brian Otieno</span><span class="num">254733●●●902</span></button>
+        <button class="demo-btn" onclick="demoLogin('admin')"><span><span class="role">Admin</span> · Platform Ops</span><span class="num">254700●●●001</span></button>
+      </div>
+    </div>
+
+    <a class="back-to-site" onclick="goTo('landing')" style="cursor:pointer;">← Back to site</a>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- APP SHELL -->
+<!-- ============================================================ -->
+<div id="view-app" class="hidden">
+  <aside class="sidebar">
+    <div class="logo-lockup">
+      <div class="stamp-mark" style="color:var(--brass-light);">TS</div>
+      <div>
+        <div class="logo-word" style="font-size:16px;">TaxScanner</div>
+        <div class="logo-sub">KRA-ready records</div>
+      </div>
+    </div>
+
+    <a class="side-link" data-tab="dashboard" onclick="goTab('dashboard')">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="11" width="8" height="10" rx="1"/><rect x="3" y="15" width="8" height="6" rx="1"/></svg>Dashboard</span>
+    </a>
+    <a class="side-link" data-tab="accounts" onclick="goTab('accounts')">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M7 14h4"/></svg>My Accounts</span>
+      <span class="side-count" id="countAccounts">0</span>
+    </a>
+    <a class="side-link" data-tab="receipts" onclick="goTab('receipts')">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Receipts</span>
+      <span class="side-count" id="countReceipts">0</span>
+    </a>
+    <a class="side-link" data-tab="addmanager" onclick="goTab('addmanager')">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c0-3 2.5-5.2 5.5-5.2S14.5 16 14.5 19"/><path d="M18 8v6M15 11h6"/></svg>Add Manager</span>
+    </a>
+    <a class="side-link hidden" data-tab="admin" id="adminTabLink" onclick="goTab('admin')">
+      <span class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 4 6v6c0 4.4 3.4 8.2 8 9 4.6-.8 8-4.6 8-9V6l-8-3Z"/></svg>Admin</span>
+      <span class="side-count" id="countAdmin">0</span>
+    </a>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="av" id="userAvatar">?</div>
+        <div>
+          <div class="name" id="userName">—</div>
+          <div class="role" id="userRole">—</div>
+        </div>
+      </div>
+      <a class="logout-link" onclick="logout()" style="cursor:pointer;">Log out</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <span class="crumb" id="topCrumb">Dashboard</span>
+        <h1 id="topTitle">Overview</h1>
+      </div>
+      <div id="topbarActions"></div>
+    </div>
+
+    <div class="content">
+      <!-- ---------------- DASHBOARD ---------------- -->
+      <div id="tab-dashboard" class="tab-panel">
+        <div class="stat-grid">
+          <div class="card stat-card">
+            <div class="label">Total receipts</div>
+            <div class="value" id="statReceipts">0</div>
+            <div class="sub">Across all accounts you manage</div>
+          </div>
+          <div class="card stat-card forest">
+            <div class="label">Total invoice value</div>
+            <div class="value" id="statAmount">KES 0</div>
+            <div class="sub">All-time, this login</div>
+          </div>
+          <div class="card stat-card">
+            <div class="label">Total tax captured</div>
+            <div class="value" id="statTax">KES 0</div>
+            <div class="sub">Sum of tax_amount on saved receipts</div>
+          </div>
+          <div class="card stat-card stamp">
+            <div class="label">Accounts managed</div>
+            <div class="value" id="statAccounts">0</div>
+            <div class="sub" id="statAccountsSub">—</div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card panel">
+            <div class="panel-head">
+              <h3>Receipts filed — last 6 months</h3>
+              <span class="hint">across every account</span>
+            </div>
+            <div class="chart-wrap">
+              <div class="bar-col" id="chartBars"></div>
+            </div>
+          </div>
+          <div class="card panel">
+            <div class="panel-head">
+              <h3>eTIMS compliance</h3>
+              <span class="hint">status of saved records</span>
+            </div>
+            <div id="etimsBreakdown"></div>
+          </div>
+        </div>
+
+        <div class="card panel">
+          <div class="panel-head">
+            <h3>Recent activity</h3>
+            <button class="btn btn-ghost btn-sm" onclick="goTab('receipts')">Go to Receipts →</button>
+          </div>
+          <table class="ledger">
+            <thead><tr><th>Date</th><th>Supplier</th><th>Account (PIN)</th><th style="text-align:right;">Amount</th><th>Source</th><th>eTIMS</th></tr></thead>
+            <tbody id="recentActivityBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ---------------- ACCOUNTS ---------------- -->
+      <div id="tab-accounts" class="tab-panel hidden">
+        <div class="card panel">
+          <div class="panel-head">
+            <h3>Look up a PIN</h3>
+            <span class="hint">see its owner &amp; every account manager on it</span>
+          </div>
+          <div class="search-row">
+            <input type="text" id="pinLookupInput" placeholder="e.g. P051876234K">
+            <button class="btn btn-primary" onclick="lookupPin()">Search</button>
+          </div>
+          <div id="pinLookupResult" style="margin-top:16px;"></div>
+        </div>
+
+        <div class="card panel">
+          <div class="panel-head">
+            <h3>Accounts you manage</h3>
+            <button class="btn btn-brass btn-sm" onclick="toggleAddPin()">98 · Add Another PIN</button>
+          </div>
+          <div id="addPinForm" class="hidden" style="margin-bottom:18px; padding:16px; border:1px dashed var(--line); border-radius:6px;">
+            <div class="field">
+              <label>KRA PIN or National ID</label>
+              <input type="text" id="newPinInput" placeholder="Enter a PIN or National ID to verify">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="submitAddPin()">Verify &amp; add</button>
+          </div>
+          <div id="accountsList"></div>
+        </div>
+      </div>
+
+      <!-- ---------------- RECEIPTS ---------------- -->
+      <div id="tab-receipts" class="tab-panel hidden">
+        <div class="card panel">
+          <div class="panel-head">
+            <h3>Fetch receipts</h3>
+            <span class="hint">choose an account, or type any KRA PIN</span>
+          </div>
+          <div class="search-row">
+            <select id="receiptAccountSelect"></select>
+            <input type="text" id="receiptPinInput" placeholder="…or type a KRA PIN directly" style="max-width:220px;">
+            <button class="btn btn-primary" onclick="fetchReceipts()">Fetch Receipts</button>
+          </div>
+        </div>
+
+        <div id="receiptsResults" class="hidden">
+          <div class="card panel">
+            <div class="filter-pills" id="dateFilters">
+              <button class="pill active" data-f="7" onclick="setReceiptFilter('7')">Last 7 Days</button>
+              <button class="pill" data-f="30" onclick="setReceiptFilter('30')">Last 30 Days</button>
+              <button class="pill" data-f="60" onclick="setReceiptFilter('60')">Last 60 Days</button>
+              <button class="pill" data-f="90" onclick="setReceiptFilter('90')">Last 90 Days</button>
+              <button class="pill" data-f="365" onclick="setReceiptFilter('365')">Last 1 Year</button>
+              <button class="pill" data-f="all" onclick="setReceiptFilter('all')">All Time</button>
+            </div>
+            <div class="panel-head">
+              <h3 id="receiptsListTitle">Receipts</h3>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-ghost btn-sm" onclick="downloadAllCsv()">↓ Download All (Excel/CSV)</button>
+                <button class="btn btn-brass btn-sm" onclick="downloadAllPdf()">↓ Download All (PDF)</button>
+              </div>
+            </div>
+            <table class="ledger">
+              <thead><tr>
+                <th>Date</th><th>Supplier</th><th>Supplier PIN</th>
+                <th style="text-align:right;">Excl. Tax</th><th style="text-align:right;">Tax</th><th style="text-align:right;">Amount</th>
+                <th>Source</th><th>eTIMS</th><th></th>
+              </tr></thead>
+              <tbody id="receiptsBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="receiptsEmptyHint" class="card panel">
+          <div class="empty-state">
+            <div class="stamp-mark" style="margin:0 auto;">TS</div>
+            <p>Select an account above and fetch to see its receipts here.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------------- ADD MANAGER ---------------- -->
+      <div id="tab-addmanager" class="tab-panel hidden">
+        <div class="two-col">
+          <div class="card panel">
+            <div class="panel-head">
+              <h3>Invite an Account Manager</h3>
+              <span class="hint">you can only delegate accounts you own</span>
+            </div>
+            <div class="field">
+              <label>Colleague's WhatsApp number</label>
+              <div class="phone-input">
+                <span class="phone-prefix">+254</span>
+                <input type="tel" id="mgrPhone" placeholder="7XX XXX XXX" maxlength="9">
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div class="field"><label>First name</label><input type="text" id="mgrFirst" placeholder="Brian"></div>
+              <div class="field"><label>Last name</label><input type="text" id="mgrLast" placeholder="Otieno"></div>
+            </div>
+            <div class="field">
+              <label>Email <span style="text-transform:none; font-weight:400; color:var(--slate-light);">(optional)</span></label>
+              <input type="email" id="mgrEmail" placeholder="brian@example.com">
+            </div>
+            <div class="field">
+              <label>Which accounts should they manage?</label>
+              <div class="checkbox-list" id="ownedAccountsChecklist"></div>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="submitInvite()">Send invite</button>
+            <p style="font-size:11.5px; color:var(--slate-light); margin-top:12px; line-height:1.5;">Your colleague gets a WhatsApp message immediately — they say "Hi" and land straight in their dashboard. No registration step needed on their end.</p>
+          </div>
+          <div class="card panel">
+            <div class="panel-head"><h3>Recently invited</h3></div>
+            <div id="recentInvites"><div class="empty-state" style="padding:24px 10px;"><p>Invitations you send will appear here.</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------------- ADMIN ---------------- -->
+      <div id="tab-admin" class="tab-panel hidden">
+        <div class="stat-grid">
+          <div class="card stat-card">
+            <div class="label">PINs registered</div>
+            <div class="value">184</div>
+            <div class="sub">+9 in the last 30 days</div>
+          </div>
+          <div class="card stat-card forest">
+            <div class="label">Active owners</div>
+            <div class="value">151</div>
+            <div class="sub">Hold at least one PIN</div>
+          </div>
+          <div class="card stat-card">
+            <div class="label">Account managers</div>
+            <div class="value">63</div>
+            <div class="sub">Delegated across all accounts</div>
+          </div>
+          <div class="card stat-card stamp">
+            <div class="label">Receipts, platform-wide</div>
+            <div class="value">2,946</div>
+            <div class="sub">All-time, all accounts</div>
+          </div>
+        </div>
+        <div class="admin-grid">
+          <div class="card panel">
+            <div class="panel-head"><h3>Recently registered PINs</h3><span class="hint">newest first</span></div>
+            <table class="ledger">
+              <thead><tr><th>KRA PIN</th><th>Type</th><th>Owner phone</th><th>Registered</th></tr></thead>
+              <tbody id="adminPinsBody"></tbody>
+            </table>
+          </div>
+          <div class="card panel">
+            <div class="panel-head"><h3>Registrations — last 6 months</h3></div>
+            <div class="chart-wrap"><div class="bar-col" id="adminChartBars"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   MOCK DATA LAYER
+   ============================================================ */
+const SUPPLIERS = [
+  ["Naivas Supermarket Ltd","P051876234K"],["Java House Kenya Ltd","P004512987J"],
+  ["Total Energies Kenya","P009887654T"],["Quickmart Ltd","P002234561Q"],
+  ["Artcaffe Coffee Roasters","P006677891A"],["Carrefour Kenya (Majid Al Futtaim)","P001122334C"],
+  ["Safaricom PLC","P051000123S"],["Bata Shoe Company (K) Ltd","P004433221B"],
+  ["Kenya Power & Lighting Co.","P000998877K"],["Uber Kenya Ltd","P007766554U"],
+  ["Chandarana Foodplus","P003344556C"],["Text Book Centre Ltd","P008899001T"]
+];
+
+function seedFromString(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i)) >>> 0; } return h; }
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+function genReceipts(pin, count){
+  const rnd = mulberry32(seedFromString(pin));
+  const out = [];
+  const today = new Date('2026-07-26');
+  for(let i=0;i<count;i++){
+    const s = SUPPLIERS[Math.floor(rnd()*SUPPLIERS.length)];
+    const daysAgo = Math.floor(rnd()*400);
+    const d = new Date(today); d.setDate(d.getDate()-daysAgo);
+    const exclTax = Math.round((200 + rnd()*9000)*100)/100;
+    const tax = Math.round(exclTax*0.16*100)/100;
+    const method = rnd() > 0.22 ? 'ai_vision' : 'manual';
+    out.push({
+      id: 40000+Math.floor(rnd()*9000),
+      supplier_name: s[0], supplier_pin: s[1],
+      invoice_number: 'INV-'+(80000+Math.floor(rnd()*9000)),
+      total_excl_tax: exclTax, tax_amount: tax, invoice_amount: Math.round((exclTax+tax)*100)/100,
+      invoice_date: d.toISOString().slice(0,10),
+      extraction_method: method,
+      verification_status: 'not_verified', // matches backend: no eTIMS integration live yet
+      days_ago: daysAgo
+    });
+  }
+  out.sort((a,b)=> a.days_ago - b.days_ago);
+  return out;
+}
+
+const DEMO_USERS = {
+  owner: {
+    name:"Alena Kimutai", phone:"254712345341", role:"owner",
+    accounts:[
+      {id:1, kra_pin:"P051234567X", name:"Alena Kimutai Consultancy Ltd", role:"owner"},
+      {id:2, kra_pin:"A009876543Z", name:"Riverside Traders Ltd", role:"owner"},
+      {id:3, kra_pin:"P004455667Y", name:"Coastline Imports Ltd", role:"manager"},
+    ]
+  },
+  manager: {
+    name:"Brian Otieno", phone:"254733456902", role:"manager",
+    accounts:[
+      {id:2, kra_pin:"A009876543Z", name:"Riverside Traders Ltd", role:"manager"},
+      {id:4, kra_pin:"P007712345M", name:"Otieno & Sons Hardware", role:"manager"},
+    ]
+  },
+  admin: {
+    name:"Platform Ops", phone:"254700000001", role:"admin",
+    accounts:[
+      {id:1, kra_pin:"P051234567X", name:"Alena Kimutai Consultancy Ltd", role:"owner"},
+    ]
+  }
+};
+
+/* ============================================================
+   APP STATE
+   ============================================================ */
+let state = {
+  user: null,
+  receiptsCache: {},     // pin -> array
+  currentReceipts: [],   // filtered view
+  currentReceiptFilter: '7',
+  currentReceiptAccount: null,
+  invites: []
+};
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+function goTo(view){
+  document.getElementById('view-landing').classList.toggle('hidden', view!=='landing');
+  document.getElementById('view-login').classList.toggle('hidden', view!=='login');
+  document.getElementById('view-app').classList.toggle('hidden', view!=='app');
+  window.scrollTo(0,0);
+}
+
+function toast(msg){
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className='toast';
+  el.innerHTML = '<span class="dot"></span><span>'+msg+'</span>';
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300); }, 3200);
+}
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+let pendingPhone = null;
+function sendOtp(){
+  const digits = document.getElementById('loginPhone').value.replace(/\D/g,'');
+  if(digits.length < 9){ toast('Enter a valid 9-digit number after +254'); return; }
+  pendingPhone = '254'+digits;
+  document.getElementById('otpPhoneEcho').textContent = '+'+pendingPhone;
+  document.getElementById('loginStepPhone').classList.add('hidden');
+  document.getElementById('loginStepOtp').classList.remove('hidden');
+  toast('Code sent via WhatsApp');
+}
+function backToPhone(){
+  document.getElementById('loginStepOtp').classList.add('hidden');
+  document.getElementById('loginStepPhone').classList.remove('hidden');
+}
+function confirmOtp(){
+  const code = document.getElementById('otpCode').value.trim();
+  if(code.length !== 6){ toast('Enter the 6-digit code'); return; }
+  // demo: match against known numbers, else default to owner-style guest
+  let match = Object.values(DEMO_USERS).find(u=>u.phone===pendingPhone);
+  enterApp(match ? match : {...DEMO_USERS.owner, phone:pendingPhone});
+}
+function demoLogin(key){ enterApp(DEMO_USERS[key]); }
+
+function enterApp(user){
+  state.user = JSON.parse(JSON.stringify(user));
+  state.receiptsCache = {};
+  state.invites = [];
+
+  document.getElementById('userName').textContent = user.name;
+  document.getElementById('userRole').textContent = user.role === 'admin' ? 'Admin' : (user.role === 'owner' ? 'Owner' : 'Account Manager');
+  document.getElementById('userAvatar').textContent = user.name.split(' ').map(n=>n[0]).slice(0,2).join('');
+  document.getElementById('adminTabLink').classList.toggle('hidden', user.role !== 'admin');
+
+  renderAccountsSidebarCounts();
+  populateReceiptAccountSelect();
+  populateOwnedChecklist();
+  renderDashboard();
+  renderAccountsTab();
+  renderAdmin();
+
+  goTo('app');
+  goTab('dashboard');
+  toast('Welcome back, '+user.name.split(' ')[0]+'.');
+}
+
+function logout(){
+  state.user = null;
+  document.getElementById('loginPhone').value='';
+  document.getElementById('otpCode').value='';
+  backToPhone();
+  goTo('login');
+}
+
+/* ============================================================
+   TABS
+   ============================================================ */
+const TAB_TITLES = {
+  dashboard:['Overview','Dashboard'],
+  accounts:['My Accounts','Accounts'],
+  receipts:['Receipts','Receipts'],
+  addmanager:['Delegate access','Add Account Manager'],
+  admin:['Platform','Admin']
+};
+function goTab(tab){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.side-link').forEach(l=>l.classList.toggle('active', l.dataset.tab===tab));
+  document.getElementById('topCrumb').textContent = TAB_TITLES[tab][0];
+  document.getElementById('topTitle').textContent = TAB_TITLES[tab][1];
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function money(n){ return 'KES '+Number(n).toLocaleString('en-KE',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtDate(iso){ const d=new Date(iso); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+function accountsForUser(){ return state.user.accounts; }
+function ownedAccounts(){ return state.user.accounts.filter(a=>a.role==='owner'); }
+function getReceiptsFor(pin){
+  if(!state.receiptsCache[pin]) state.receiptsCache[pin] = genReceipts(pin, 4 + (seedFromString(pin)%9));
+  return state.receiptsCache[pin];
+}
+function withinDays(iso, days){
+  if(days==='all') return true;
+  const d = (new Date('2026-07-26') - new Date(iso)) / 86400000;
+  return d <= Number(days);
+}
+function etimsLabel(){ return 'Pending Verification'; } // matches backend: verification_status is always not_verified today
+
+function renderAccountsSidebarCounts(){
+  document.getElementById('countAccounts').textContent = accountsForUser().length;
+  let totalReceipts = 0;
+  accountsForUser().forEach(a=> totalReceipts += getReceiptsFor(a.kra_pin).length);
+  document.getElementById('countReceipts').textContent = totalReceipts;
+  document.getElementById('countAdmin').textContent = 184;
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function renderDashboard(){
+  const accts = accountsForUser();
+  let all = [];
+  accts.forEach(a=>{
+    getReceiptsFor(a.kra_pin).forEach(r=> all.push({...r, account:a}));
+  });
+
+  const totalAmount = all.reduce((s,r)=>s+r.invoice_amount,0);
+  const totalTax = all.reduce((s,r)=>s+r.tax_amount,0);
+
+  document.getElementById('statReceipts').textContent = all.length;
+  document.getElementById('statAmount').textContent = money(totalAmount);
+  document.getElementById('statTax').textContent = money(totalTax);
+  document.getElementById('statAccounts').textContent = accts.length;
+  document.getElementById('statAccountsSub').textContent = ownedAccounts().length + ' owned · ' + (accts.length-ownedAccounts().length) + ' delegated';
+
+  // 6-month bar chart
+  const months = [];
+  const base = new Date('2026-07-26');
+  for(let i=5;i>=0;i--){ const d=new Date(base); d.setMonth(d.getMonth()-i); months.push(d); }
+  const counts = months.map(m=>{
+    return all.filter(r=>{
+      const rd = new Date(r.invoice_date);
+      return rd.getFullYear()===m.getFullYear() && rd.getMonth()===m.getMonth();
+    }).length;
+  });
+  const maxC = Math.max(1, ...counts);
+  const chartEl = document.getElementById('chartBars');
+  chartEl.innerHTML = months.map((m,i)=>{
+    const h = Math.max(6, Math.round((counts[i]/maxC)*118));
+    return '<div class="bar"><div class="stick" style="height:'+h+'px"></div><div class="m">'+m.toLocaleDateString('en-GB',{month:'short'})+'</div></div>';
+  }).join('');
+
+  // eTIMS breakdown (all pending — accurate to backend)
+  document.getElementById('etimsBreakdown').innerHTML =
+    '<div style="display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--parchment-2);">'+
+    '<span class="badge badge-pending">Pending Verification</span><span style="font-family:var(--mono); font-weight:700;">'+all.length+'</span></div>'+
+    '<div style="display:flex; align-items:center; justify-content:space-between; padding:12px 0;">'+
+    '<span class="badge" style="background:rgba(31,75,63,0.08); color:var(--forest);">Verified</span><span style="font-family:var(--mono); font-weight:700; color:var(--slate-light);">0</span></div>'+
+    '<p style="font-size:11.5px; color:var(--slate-light); margin-top:6px; line-height:1.5;">eTIMS integration is not yet live — every record is queued and ready for verification the moment it is.</p>';
+
+  // recent activity
+  all.sort((a,b)=> a.days_ago - b.days_ago);
+  const recent = all.slice(0,6);
+  document.getElementById('recentActivityBody').innerHTML = recent.length ? recent.map(r=>
+    '<tr><td>'+fmtDate(r.invoice_date)+'</td><td>'+r.supplier_name+'</td>'+
+    '<td style="font-family:var(--mono); font-size:12px;">'+r.account.kra_pin+'</td>'+
+    '<td class="num-cell">'+money(r.invoice_amount)+'</td>'+
+    '<td>'+(r.extraction_method==='ai_vision' ? '<span class="badge badge-ai">AI Scanned</span>' : '<span class="badge badge-manual">Manual</span>')+'</td>'+
+    '<td><span class="badge badge-pending">Pending</span></td></tr>'
+  ).join('') : '<tr><td colspan="6"><div class="empty-state"><p>No receipts yet.</p></div></td></tr>';
+}
+
+/* ============================================================
+   ACCOUNTS TAB
+   ============================================================ */
+const ALL_PINS_DB = {
+  "P051234567X": {name:"Alena Kimutai Consultancy Ltd", type:"Individual", status:"Active", owner:"Alena Kimutai (254712●●●341)", managers:["Brian Otieno — delegated 12 May 2026"]},
+  "A009876543Z": {name:"Riverside Traders Ltd", type:"Company", status:"Active", owner:"Alena Kimutai (254712●●●341)", managers:["Brian Otieno — delegated 03 Jun 2026"]},
+  "P004455667Y": {name:"Coastline Imports Ltd", type:"Company", status:"Active", owner:"Daniel Mwangi (254722●●●118)", managers:["Alena Kimutai — delegated 21 Feb 2026"]},
+  "P007712345M": {name:"Otieno & Sons Hardware", type:"Individual", status:"Active", owner:"Brian Otieno's client (254701●●●556)", managers:["Brian Otieno — delegated 09 Jul 2026"]},
+};
+
+function lookupPin(){
+  const pin = document.getElementById('pinLookupInput').value.trim().toUpperCase();
+  const box = document.getElementById('pinLookupResult');
+  if(!pin){ toast('Enter a PIN to search'); return; }
+  const rec = ALL_PINS_DB[pin];
+  if(!rec){
+    box.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No account found for <strong>'+pin+'</strong>. Check the PIN and try again.</p></div>';
+    return;
+  }
+  box.innerHTML = '<div class="card" style="padding:16px 18px;">'+
+    '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">'+
+    '<div><div style="font-family:var(--mono); font-weight:700;">'+pin+'</div><div style="font-size:12.5px; color:var(--slate);">'+rec.name+' · '+rec.type+'</div></div>'+
+    '<span class="badge" style="background:rgba(31,75,63,0.08); color:var(--forest);">'+rec.status+'</span></div>'+
+    '<div class="manager-row"><span style="color:var(--slate);">Owner</span><span style="font-weight:600;">'+rec.owner+'</span></div>'+
+    rec.managers.map(m=>'<div class="manager-row"><span style="color:var(--slate);">Account Manager</span><span>'+m+'</span></div>').join('')+
+    '</div>';
+}
+
+function renderAccountsTab(){
+  const accts = accountsForUser();
+  document.getElementById('accountsList').innerHTML = accts.map(a=>{
+    const count = getReceiptsFor(a.kra_pin).length;
+    return '<div class="account-card">'+
+      '<div class="left"><div class="stamp-mark" style="width:30px; height:30px; font-size:11px; color:var(--forest);">'+a.kra_pin.slice(0,2)+'</div>'+
+      '<div><div class="pin-mono">'+a.kra_pin+'</div><div class="aname">'+a.name+'</div></div></div>'+
+      '<div class="right"><span class="badge '+(a.role==='owner'?'badge-owner':'badge-manager')+'">'+(a.role==='owner'?'Owner':'Account Manager')+'</span>'+
+      '<span style="font-family:var(--mono); font-size:12px; color:var(--slate-light);">'+count+' receipts</span>'+
+      '<button class="btn btn-ghost btn-sm" onclick="jumpToReceiptsFor(\''+a.kra_pin+'\')">View →</button></div></div>';
+  }).join('');
+}
+function toggleAddPin(){ document.getElementById('addPinForm').classList.toggle('hidden'); }
+function submitAddPin(){
+  const val = document.getElementById('newPinInput').value.trim();
+  if(!val){ toast('Enter a PIN or National ID'); return; }
+  toast('Verifying '+val.toUpperCase()+'…');
+  setTimeout(()=>{
+    const newAcct = {id: Date.now(), kra_pin: val.toUpperCase(), name: "New Verified Taxpayer", role:'owner'};
+    state.user.accounts.push(newAcct);
+    document.getElementById('newPinInput').value='';
+    document.getElementById('addPinForm').classList.add('hidden');
+    renderAccountsSidebarCounts(); renderAccountsTab(); populateReceiptAccountSelect(); populateOwnedChecklist(); renderDashboard();
+    toast('✅ '+val.toUpperCase()+' added to your accounts.');
+  }, 700);
+}
+
+/* ============================================================
+   RECEIPTS TAB
+   ============================================================ */
+function populateReceiptAccountSelect(){
+  const sel = document.getElementById('receiptAccountSelect');
+  sel.innerHTML = '<option value="">Select an account…</option>' +
+    accountsForUser().map(a=>'<option value="'+a.kra_pin+'">'+a.kra_pin+' — '+a.name+'</option>').join('');
+}
+function jumpToReceiptsFor(pin){
+  goTab('receipts');
+  document.getElementById('receiptAccountSelect').value = pin;
+  fetchReceipts();
+}
+function fetchReceipts(){
+  const sel = document.getElementById('receiptAccountSelect').value;
+  const typed = document.getElementById('receiptPinInput').value.trim().toUpperCase();
+  const pin = typed || sel;
+  if(!pin){ toast('Choose an account or type a KRA PIN'); return; }
+  state.currentReceiptAccount = pin;
+  state.currentReceiptFilter = '7';
+  document.querySelectorAll('#dateFilters .pill').forEach(p=>p.classList.toggle('active', p.dataset.f==='7'));
+  document.getElementById('receiptsResults').classList.remove('hidden');
+  document.getElementById('receiptsEmptyHint').classList.add('hidden');
+  renderReceiptsList();
+  toast('Fetched receipts for '+pin);
+}
+function setReceiptFilter(f){
+  state.currentReceiptFilter = f;
+  document.querySelectorAll('#dateFilters .pill').forEach(p=>p.classList.toggle('active', p.dataset.f===f));
+  renderReceiptsList();
+}
+const FILTER_LABELS = {'7':'Last 7 Days','30':'Last 30 Days','60':'Last 60 Days','90':'Last 90 Days','365':'Last 1 Year','all':'All Time'};
+function renderReceiptsList(){
+  const pin = state.currentReceiptAccount;
+  const all = getReceiptsFor(pin);
+  const filtered = all.filter(r=>withinDays(r.invoice_date, state.currentReceiptFilter));
+  state.currentReceipts = filtered;
+  document.getElementById('receiptsListTitle').textContent = pin+' — '+FILTER_LABELS[state.currentReceiptFilter]+' ('+filtered.length+')';
+  document.getElementById('receiptsBody').innerHTML = filtered.length ? filtered.map(r=>
+    '<tr><td>'+fmtDate(r.invoice_date)+'</td><td>'+r.supplier_name+'</td>'+
+    '<td style="font-family:var(--mono); font-size:12px;">'+r.supplier_pin+'</td>'+
+    '<td class="num-cell">'+money(r.total_excl_tax)+'</td>'+
+    '<td class="num-cell">'+money(r.tax_amount)+'</td>'+
+    '<td class="num-cell" style="font-weight:700;">'+money(r.invoice_amount)+'</td>'+
+    '<td>'+(r.extraction_method==='ai_vision' ? '<span class="badge badge-ai">AI Scanned</span>' : '<span class="badge badge-manual">Manual</span>')+'</td>'+
+    '<td><span class="badge badge-pending">Pending</span></td>'+
+    '<td class="actions-cell"><button class="btn btn-ghost btn-sm" onclick="downloadSingle('+r.id+')">↓ PDF</button></td></tr>'
+  ).join('') : '<tr><td colspan="9"><div class="empty-state"><p>No receipts found for '+FILTER_LABELS[state.currentReceiptFilter]+'.</p></div></td></tr>';
+}
+
+/* -------- exports -------- */
+function csvEscape(v){ v = (v===null||v===undefined) ? '' : String(v); if(/[",\n]/.test(v)) v = '"'+v.replace(/"/g,'""')+'"'; return v; }
+function downloadAllCsv(){
+  if(!state.currentReceipts.length){ toast('No receipts to export'); return; }
+  const headers = ['Invoice Number','Supplier PIN','Supplier Name','Amount Excl. Tax','Tax on Invoice','Invoice Amount','Date','eTIMS Compliance'];
+  const rows = state.currentReceipts.map(r=>[r.invoice_number,r.supplier_pin,r.supplier_name,r.total_excl_tax,r.tax_amount,r.invoice_amount,r.invoice_date,'Pending Verification']);
+  let csv = headers.map(csvEscape).join(',')+'\n' + rows.map(r=>r.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'receipts_'+state.currentReceiptAccount+'_'+state.currentReceiptFilter+'.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast('CSV downloaded — '+state.currentReceipts.length+' receipts');
+}
+function downloadAllPdf(){
+  if(!state.currentReceipts.length){ toast('No receipts to export'); return; }
+  if(!window.jspdf){ toast('PDF library failed to load'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape', unit:'pt', format:'a4'});
+  const margin = 30; let y = margin + 10;
+  const headers = ['Invoice #','Supplier PIN','Supplier','Excl. Tax','Tax','Amount','Date','eTIMS'];
+  const widths = [70,80,190,70,60,70,70,100];
+
+  function drawHeader(){
+    doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text('TaxScanner — Receipt Ledger', margin, margin);
+    doc.setFontSize(9); doc.setTextColor(110);
+    doc.text(state.currentReceiptAccount+'  ·  '+FILTER_LABELS[state.currentReceiptFilter]+'  ·  '+state.currentReceipts.length+' receipts', margin, margin+14);
+    doc.setTextColor(0);
+    y = margin + 34;
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+    let x = margin;
+    headers.forEach((h,i)=>{ doc.text(h, x, y); x += widths[i]; });
+    y += 4; doc.setLineWidth(0.6); doc.line(margin, y, margin+widths.reduce((a,b)=>a+b,0), y);
+    y += 14;
+    doc.setFont('helvetica','normal');
+  }
+  drawHeader();
+  state.currentReceipts.forEach(r=>{
+    if(y > 560){ doc.addPage(); y = margin + 10; drawHeader(); }
+    let x = margin;
+    const cells = [r.invoice_number, r.supplier_pin, r.supplier_name, r.total_excl_tax.toFixed(2), r.tax_amount.toFixed(2), r.invoice_amount.toFixed(2), r.invoice_date, 'Pending Verification'];
+    cells.forEach((c,i)=>{
+      let text = String(c);
+      if(text.length > 30) text = text.slice(0,27)+'...';
+      doc.text(text, x, y); x += widths[i];
+    });
+    y += 15;
+  });
+  doc.save('receipts_'+state.currentReceiptAccount+'_'+state.currentReceiptFilter+'.pdf');
+  toast('PDF downloaded — '+state.currentReceipts.length+' receipts');
+}
+function downloadSingle(id){
+  const r = state.currentReceipts.find(x=>x.id===id) || Object.values(state.receiptsCache).flat().find(x=>x.id===id);
+  if(!r || !window.jspdf){ toast('Could not prepare that receipt'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:[320,480]});
+  let y = 40;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text('TaxScanner', 24, y);
+  doc.setFontSize(8); doc.setTextColor(120); doc.text('Ref #R'+r.id, 24, y+13); doc.setTextColor(0);
+  y += 34; doc.setDrawColor(210); doc.line(24,y,296,y); y += 22;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(r.supplier_name, 24, y); y += 22;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+  const rows = [
+    ['Supplier PIN', r.supplier_pin], ['Invoice #', r.invoice_number],
+    ['Amount excl. tax', 'KES '+r.total_excl_tax.toFixed(2)], ['Tax', 'KES '+r.tax_amount.toFixed(2)],
+    ['Date', r.invoice_date], ['Source', r.extraction_method==='ai_vision'?'AI Vision':'Manual Entry'],
+    ['eTIMS Compliance', 'Pending Verification']
+  ];
+  rows.forEach(([k,v])=>{ doc.setTextColor(120); doc.text(k,24,y); doc.setTextColor(0); doc.text(String(v),150,y); y+=20; });
+  y += 6; doc.setLineWidth(1); doc.setDrawColor(20); doc.line(24,y,296,y); y+=22;
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Total', 24, y); doc.text('KES '+r.invoice_amount.toFixed(2), 150, y);
+  doc.save('receipt_R'+r.id+'.pdf');
+  toast('Receipt R'+r.id+' downloaded');
+}
+
+/* ============================================================
+   ADD MANAGER TAB
+   ============================================================ */
+function populateOwnedChecklist(){
+  const owned = ownedAccounts();
+  const box = document.getElementById('ownedAccountsChecklist');
+  if(!owned.length){
+    box.innerHTML = '<div class="empty-state" style="padding:18px;"><p>You do not own any accounts yet — add a PIN first under My Accounts.</p></div>';
+    return;
+  }
+  box.innerHTML = owned.map(a=>
+    '<label class="checkbox-item"><input type="checkbox" value="'+a.kra_pin+'"><span><strong style="font-family:var(--mono);">'+a.kra_pin+'</strong> — '+a.name+'</span></label>'
+  ).join('');
+}
+function submitInvite(){
+  const digits = document.getElementById('mgrPhone').value.replace(/\D/g,'');
+  const first = document.getElementById('mgrFirst').value.trim();
+  const last = document.getElementById('mgrLast').value.trim();
+  const checked = Array.from(document.querySelectorAll('#ownedAccountsChecklist input:checked')).map(c=>c.value);
+
+  if(digits.length < 9){ toast('Enter a valid WhatsApp number'); return; }
+  if(!first){ toast("Enter the colleague's first name"); return; }
+  if(!checked.length){ toast('Choose at least one account to delegate'); return; }
+
+  const invite = { phone:'254'+digits, name: first+' '+last, accounts: checked, at:new Date() };
+  state.invites.unshift(invite);
+  renderInvites();
+  ['mgrPhone','mgrFirst','mgrLast','mgrEmail'].forEach(id=>document.getElementById(id).value='');
+  document.querySelectorAll('#ownedAccountsChecklist input').forEach(c=>c.checked=false);
+  toast('✅ Invite sent to '+invite.name+' via WhatsApp');
+}
+function renderInvites(){
+  const box = document.getElementById('recentInvites');
+  if(!state.invites.length){ box.innerHTML = '<div class="empty-state" style="padding:24px 10px;"><p>Invitations you send will appear here.</p></div>'; return; }
+  box.innerHTML = state.invites.map(inv=>
+    '<div class="manager-row" style="flex-direction:column; align-items:flex-start; gap:4px; padding:12px 0;">'+
+    '<div style="display:flex; justify-content:space-between; width:100%;"><strong>'+inv.name+'</strong><span style="font-family:var(--mono); font-size:11.5px; color:var(--slate-light);">+'+inv.phone+'</span></div>'+
+    '<div style="font-size:12px; color:var(--slate);">Manages: '+inv.accounts.join(', ')+'</div></div>'
+  ).join('');
+}
+
+/* ============================================================
+   ADMIN TAB
+   ============================================================ */
+function renderAdmin(){
+  const rows = [
+    ['P051987654L','Individual','254712●●●341','25 Jul 2026'],
+    ['A008812234C','Company','254798●●●210','24 Jul 2026'],
+    ['P006654321Q','Individual','254701●●●873','22 Jul 2026'],
+    ['A002298871B','Company','254733●●●902','19 Jul 2026'],
+    ['P009911223D','Individual','254711●●●045','15 Jul 2026'],
+  ];
+  document.getElementById('adminPinsBody').innerHTML = rows.map(r=>
+    '<tr><td style="font-family:var(--mono);">'+r[0]+'</td><td>'+r[1]+'</td>'+
+    '<td style="font-family:var(--mono); font-size:12px;">'+r[2]+'</td><td>'+r[3]+'</td></tr>'
+  ).join('');
+
+  const counts = [11, 14, 9, 18, 22, 9];
+  const labels = ['Feb','Mar','Apr','May','Jun','Jul'];
+  const maxC = Math.max(...counts);
+  document.getElementById('adminChartBars').innerHTML = counts.map((c,i)=>{
+    const h = Math.max(6, Math.round((c/maxC)*118));
+    return '<div class="bar"><div class="stick" style="height:'+h+'px"></div><div class="m">'+labels[i]+'</div></div>';
+  }).join('');
+}
+</script>
+</body>
+</html>
